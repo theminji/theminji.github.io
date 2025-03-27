@@ -1,5 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Existing variables ---
     const mazeContainer = document.getElementById('maze-container');
     const generateBtn = document.getElementById('generate-btn');
     const solveBtn = document.getElementById('solve-btn');
@@ -7,58 +6,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const speedInput = document.getElementById('speed');
     const statusDiv = document.getElementById('status');
 
-    // --- New recording variables ---
-    const recordBtn = document.getElementById('record-btn');
-    const recordingStatusDiv = document.getElementById('recording-status');
-    const canvas = document.getElementById('recording-canvas');
-    const ctx = canvas.getContext('2d');
-    let mediaRecorder;
-    let recordedChunks = [];
-    let isRecording = false;
-    let mazeSolved = false; // Track if the maze has been solved at least once
-
     let grid = [];
     let rows, cols;
     let startNode = null;
     let endNode = null;
     let isGenerating = false;
     let isSolving = false;
-    let visualizationDelay = 50;
-    let animationFrameId = null;
+    let visualizationDelay = 50; // Default delay in ms
+    let animationFrameId = null; // To potentially cancel visualization
 
-    const CELL_SIZE = 20;
+    const CELL_SIZE = 20; // Pixel size of each cell
 
-    // --- Visualization Colors ---
-    const COLORS = {
-        background: '#fff',
-        wall: '#333',
-        path: '#fff', // Default cell color if not wall
-        start: '#28a745',
-        end: '#dc3545',
-        open: '#add8e6',
-        closed: '#b0c4de',
-        current: '#ffc107',
-        pathFinal: '#ffeb3b',
-        gridLine: '#eee' // For canvas grid lines
-    };
-
-    // --- Node Class (Unchanged) ---
+    // --- Node Class for A* ---
     class Node {
-         constructor(row, col, isWall = false) {
+        constructor(row, col, isWall = false) {
             this.row = row;
             this.col = col;
             this.isWall = isWall;
-            this.g = Infinity;
-            this.h = 0;
-            this.f = Infinity;
+            this.g = Infinity; // Cost from start node
+            this.h = 0;        // Heuristic cost to end node
+            this.f = Infinity; // Total cost (g + h)
             this.parent = null;
             this.isStart = false;
             this.isEnd = false;
-            // Add state for drawing on canvas
-            this.isCurrent = false;
-            this.isOpen = false;
-            this.isClosed = false;
-            this.isPathFinal = false;
         }
 
         reset() {
@@ -66,132 +36,115 @@ document.addEventListener('DOMContentLoaded', () => {
             this.h = 0;
             this.f = Infinity;
             this.parent = null;
-            this.isCurrent = false;
-            this.isOpen = false;
-            this.isClosed = false;
-            this.isPathFinal = false;
-            // isWall, isStart, isEnd remain
+            // isWall, isStart, isEnd remain the same unless maze is regenerated
         }
 
         getElement() {
             return document.getElementById(`cell-${this.row}-${this.col}`);
         }
 
-        // Update DOM visual
         updateVisual(className, add = true) {
             const element = this.getElement();
             if (element) {
-                // Clear previous A* states if adding a new one (except for path)
-                if (add && className !== 'path-final' && !this.isStart && !this.isEnd) {
-                   element.classList.remove('open', 'closed', 'current');
-                }
-
                 if (add) {
-                    if (!(this.isStart || this.isEnd) || className === 'path-final') {
+                    // Avoid overriding start/end visuals during solving phases
+                    if (!(this.isStart || this.isEnd)) {
                          element.classList.add(className);
                     }
-                    // Override for final path highlight
+                    // Allow specific overrides if needed (like final path)
                     if (className === 'path-final') {
-                        element.classList.remove('open', 'closed', 'current');
-                        element.classList.add('path-final'); // Ensure final path style is applied
+                         element.classList.remove('open', 'closed', 'current');
+                         element.classList.add('path-final');
                     }
                 } else {
                     element.classList.remove(className);
                 }
             }
         }
-
-         // Update internal state used for canvas drawing
-        updateState(state, value = true) {
-            switch(state) {
-                case 'open': this.isOpen = value; if(value) this.isClosed = false; this.isCurrent = false; break;
-                case 'closed': this.isClosed = value; if(value) this.isOpen = false; this.isCurrent = false; break;
-                case 'current': this.isCurrent = value; if(value) this.isOpen = false; this.isClosed = false; break;
-                case 'path-final': this.isPathFinal = value; break;
-            }
-        }
     }
 
-    // --- Maze Generation (Minor change: enable record button) ---
+    // --- Maze Generation (Randomized DFS) ---
     function generateMaze() {
-        // ... (previous generateMaze code) ...
         if (isGenerating || isSolving) return;
         isGenerating = true;
         statusDiv.textContent = "Generating Maze...";
         disableControls(true);
-        clearVisualization();
+        clearVisualization(); // Clear previous solve states
 
         rows = parseInt(gridSizeInput.value);
         cols = parseInt(gridSizeInput.value);
+        // Ensure odd dimensions for better maze structure with DFS
         if (rows % 2 === 0) rows++;
         if (cols % 2 === 0) cols++;
-        gridSizeInput.value = rows;
+        gridSizeInput.value = rows; // Update input if changed
 
         visualizationDelay = parseInt(speedInput.value);
 
+        // 1. Initialize grid with all walls
         grid = [];
         for (let r = 0; r < rows; r++) {
             grid[r] = [];
             for (let c = 0; c < cols; c++) {
-                grid[r][c] = new Node(r, c, true);
+                grid[r][c] = new Node(r, c, true); // Start with all walls
             }
         }
 
+        // 2. Choose a starting point (must be odd coordinates for this algo)
         const startR = 1;
         const startC = 1;
         grid[startR][startC].isWall = false;
 
         const stack = [[startR, startC]];
+
         while (stack.length > 0) {
-            const [r, c] = stack[stack.length - 1];
+            const [r, c] = stack[stack.length - 1]; // Peek
             const neighbors = [];
+
+            // Check potential neighbors (2 steps away)
             const directions = [[-2, 0], [2, 0], [0, -2], [0, 2]];
             for (const [dr, dc] of directions) {
                 const nr = r + dr;
                 const nc = c + dc;
+
                 if (nr > 0 && nr < rows - 1 && nc > 0 && nc < cols - 1 && grid[nr][nc].isWall) {
                     neighbors.push([nr, nc]);
                 }
             }
+
             if (neighbors.length > 0) {
+                // Choose a random neighbor
                 const [nextR, nextC] = neighbors[Math.floor(Math.random() * neighbors.length)];
+
+                // Carve path to the neighbor
                 const wallR = r + (nextR - r) / 2;
                 const wallC = c + (nextC - c) / 2;
-                grid[wallR][wallC].isWall = false;
-                grid[nextR][nextC].isWall = false;
-                stack.push([nextR, nextC]);
+                grid[wallR][wallC].isWall = false; // Remove wall in between
+                grid[nextR][nextC].isWall = false; // Mark neighbor as path
+
+                stack.push([nextR, nextC]); // Move to the neighbor
             } else {
-                stack.pop();
+                stack.pop(); // Backtrack
             }
         }
 
+        // 3. Set Start and End Nodes (ensure they are not walls)
         startNode = grid[1][1];
         startNode.isStart = true;
-        startNode.isWall = false;
+        startNode.isWall = false; // Ensure start is path
 
-        endNode = grid[rows - 2][cols - 2];
+        endNode = grid[rows - 2][cols - 2]; // Usually bottom-right corner
         endNode.isEnd = true;
-        endNode.isWall = false;
+        endNode.isWall = false; // Ensure end is path
 
-        // Setup canvas dimensions
-        canvas.width = cols * CELL_SIZE;
-        canvas.height = rows * CELL_SIZE;
-
-        drawGrid(); // Draws the DOM grid
-        drawMazeOnCanvas(); // Draws the initial state on the canvas
-
+        drawGrid();
         statusDiv.textContent = "Maze Generated. Ready to Solve.";
         isGenerating = false;
         disableControls(false);
-        solveBtn.disabled = false;
-        recordBtn.disabled = true; // Disable record until solved once
-        mazeSolved = false;        // Reset solved state
-        recordingStatusDiv.textContent = "";
+        solveBtn.disabled = false; // Re-enable solve button
     }
 
-    // --- Drawing the Grid (DOM - Unchanged) ---
+    // --- Drawing the Grid ---
     function drawGrid() {
-        // ... (previous drawGrid code) ...
         mazeContainer.innerHTML = ''; // Clear previous grid
         mazeContainer.style.gridTemplateColumns = `repeat(${cols}, ${CELL_SIZE}px)`;
         mazeContainer.style.gridTemplateRows = `repeat(${rows}, ${CELL_SIZE}px)`;
@@ -216,141 +169,71 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- NEW: Drawing the Maze State on Canvas ---
-    function drawMazeOnCanvas() {
-        if (!ctx) return;
+    // --- A* Algorithm ---
+    async function solveMaze() {
+        if (isSolving || isGenerating || !startNode || !endNode) return;
+        isSolving = true;
+        statusDiv.textContent = "Solving...";
+        disableControls(true);
+        clearVisualization(false); // Clear previous solve visuals, but keep maze structure
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        visualizationDelay = parseInt(speedInput.value);
 
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                const node = grid[r][c];
-                let color = COLORS.path; // Default
+        const openSet = []; // Use array as a min-heap (simplification)
+        const closedSet = new Set(); // Efficient checking if node was visited
 
-                if (node.isWall) color = COLORS.wall;
-                // Order matters for precedence
-                if (node.isClosed) color = COLORS.closed;
-                if (node.isOpen) color = COLORS.open;
-                if (node.isCurrent) color = COLORS.current;
-                if (node.isPathFinal) color = COLORS.pathFinal;
-                if (node.isStart) color = COLORS.start;
-                if (node.isEnd) color = COLORS.end;
-
-
-                ctx.fillStyle = color;
-                ctx.fillRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-
-                // Optional: Draw grid lines on canvas (can make video clearer)
-                ctx.strokeStyle = COLORS.gridLine;
-                ctx.lineWidth = 0.5;
-                ctx.strokeRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-            }
-        }
-    }
-
-
-    // --- A* Algorithm (Modified for State Updates) ---
-    async function solveMaze(isForRecording = false, stepCallback = null) {
-        if ((isSolving || isGenerating || !startNode || !endNode) && !isForRecording) return;
-
-        if (!isForRecording) {
-             isSolving = true;
-             statusDiv.textContent = "Solving...";
-             disableControls(true);
-             clearVisualization(false); // Clear previous DOM solve visuals
-             visualizationDelay = parseInt(speedInput.value);
-        } else {
-            // Reset node states for recording run
-             grid.flat().forEach(node => node.reset());
-        }
-
-
-        const openSet = [];
-        const closedSet = new Set();
-
-        // Reset nodes G/H/F/parent values for solving run
-        grid.flat().forEach(node => {
-            node.g = Infinity;
-            node.h = 0;
-            node.f = Infinity;
-            node.parent = null;
-            // Keep isWall, isStart, isEnd
-        });
-
+        // Reset nodes for solving
+        grid.flat().forEach(node => node.reset());
 
         startNode.g = 0;
         startNode.h = heuristic(startNode, endNode);
         startNode.f = startNode.g + startNode.h;
         openSet.push(startNode);
-        startNode.updateState('open');
-        if (!isForRecording) startNode.updateVisual('open');
-
+        startNode.updateVisual('open');
 
         let pathFound = false;
 
         while (openSet.length > 0) {
+            // Find node with lowest f score in openSet
             openSet.sort((a, b) => a.f - b.f);
-            const currentNode = openSet.shift();
+            const currentNode = openSet.shift(); // Get and remove best node
 
-            // Update State
-            currentNode.updateState('open', false);
-            currentNode.updateState('current', true);
+            currentNode.updateVisual('open', false); // Remove from open visual
+            currentNode.updateVisual('current');    // Mark as current
 
-
-            if (!isForRecording) {
-                currentNode.updateVisual('open', false);
-                currentNode.updateVisual('current');
-                await sleep(visualizationDelay); // VISUALIZATION DELAY
-            }
-             // Record Step Callback
-             if (stepCallback) stepCallback();
-
+            // --- Visualization Delay ---
+            await sleep(visualizationDelay);
+            // ---------------------------
 
             if (currentNode === endNode) {
                 pathFound = true;
-                await reconstructPath(currentNode, isForRecording, stepCallback);
-                if (!isForRecording) {
-                    statusDiv.textContent = "Path Found!";
-                    mazeSolved = true; // Mark as solved
-                }
-                break;
+                await reconstructPath(currentNode);
+                statusDiv.textContent = "Path Found!";
+                break; // Exit loop
             }
 
-            // Update State
-             currentNode.updateState('current', false);
-             currentNode.updateState('closed', true);
+             currentNode.updateVisual('current', false); // Unmark current
+             currentNode.updateVisual('closed');     // Mark as closed
              closedSet.add(currentNode);
-
-
-            if (!isForRecording) {
-                currentNode.updateVisual('current', false);
-                currentNode.updateVisual('closed');
-            }
-             // Record Step Callback (after moving from current to closed)
-            if (stepCallback) stepCallback();
 
 
             const neighbors = getNeighbors(currentNode);
 
             for (const neighbor of neighbors) {
                 if (neighbor.isWall || closedSet.has(neighbor)) {
-                    continue;
+                    continue; // Skip walls and already evaluated nodes
                 }
 
-                const tentativeG = currentNode.g + 1;
+                const tentativeG = currentNode.g + 1; // Assume cost of 1 between neighbors
 
-                let newPathFoundInOpenSet = false;
+                let newPathFound = false;
                 if (!openSet.includes(neighbor)) {
-                    newPathFoundInOpenSet = true;
+                    newPathFound = true;
                     neighbor.h = heuristic(neighbor, endNode);
                     openSet.push(neighbor);
-                    neighbor.updateState('open', true); // Update state
-                     if (!isForRecording) neighbor.updateVisual('open');
-                     // Record Step Callback
-                     if (stepCallback) stepCallback();
-
+                     neighbor.updateVisual('open'); // Visualize new node in open set
                 } else if (tentativeG >= neighbor.g) {
-                    continue; // Not a better path
+                    continue; // This path is not better
                 }
 
                 // This path is the best until now. Record it!
@@ -358,38 +241,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 neighbor.g = tentativeG;
                 neighbor.f = neighbor.g + neighbor.h;
 
-                // If node was already in openSet, sorting handles the update implicitly
+                 // If it was already in openSet, it might need resort, but simple array sort handles this
+                 // If we used a proper MinHeap, we'd update its position here.
             }
-             if (!isForRecording && openSet.length > 0) {
-                 // Small delay after processing neighbors for visualization flow
-                 await sleep(Math.max(1, Math.floor(visualizationDelay / 5)));
-             }
+             // Small delay after processing neighbors for better visualization flow
+             await sleep(Math.max(1, Math.floor(visualizationDelay / 5)));
         }
 
-        if (!pathFound && !isForRecording) {
+        if (!pathFound) {
             statusDiv.textContent = "No Path Found!";
-            mazeSolved = true; // Consider it 'solved' (attempted)
         }
 
-
-        if (!isForRecording) {
-            isSolving = false;
-            disableControls(false);
-            // Enable recording ONLY if a path was found or attempted
-            recordBtn.disabled = !mazeSolved;
-        }
-
-        return pathFound; // Return status for recording
+        isSolving = false;
+        disableControls(false); // Re-enable generate button
+        // Keep solve button disabled until new maze? Or allow re-solve? Let's allow re-gen for now.
+        // solveBtn.disabled = true;
     }
 
-    // --- Helper Functions (Heuristic, GetNeighbors - Unchanged) ---
+    // --- Helper Functions ---
+
     function heuristic(nodeA, nodeB) {
+        // Manhattan distance
         return Math.abs(nodeA.row - nodeB.row) + Math.abs(nodeA.col - nodeB.col);
     }
 
     function getNeighbors(node) {
-        // ... (previous getNeighbors code) ...
-         const neighbors = [];
+        const neighbors = [];
         const { row, col } = node;
         const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // Up, Down, Left, Right
 
@@ -405,54 +282,37 @@ document.addEventListener('DOMContentLoaded', () => {
         return neighbors;
     }
 
-    // --- Reconstruct Path (Modified for State Updates) ---
-    async function reconstructPath(endNode, isForRecording = false, stepCallback = null) {
-        if (!isForRecording) {
-             statusDiv.textContent = "Drawing Path...";
-        }
-
+    async function reconstructPath(endNode) {
+        statusDiv.textContent = "Drawing Path...";
         let currentNode = endNode;
         const path = [];
         while (currentNode !== null) {
             path.push(currentNode);
             currentNode = currentNode.parent;
         }
-        path.reverse();
+        path.reverse(); // Path from start to end
 
         for (const node of path) {
-            node.updateState('path-final', true); // Update state
             if (!node.isStart && !node.isEnd) {
-                 if (!isForRecording) {
-                    node.updateVisual('path-final');
-                    await sleep(visualizationDelay / 2); // VISUALIZATION DELAY
-                }
-                 // Record Step Callback
-                 if (stepCallback) stepCallback();
-            } else {
-                 // Ensure start/end have path state for canvas, but don't update DOM class
-                 node.updateState('path-final', true);
-                 if (stepCallback) stepCallback();
+                 node.updateVisual('path-final');
+                 await sleep(visualizationDelay / 2); // Draw path slightly faster
             }
         }
     }
 
-     // --- Clear Visualization (Modified to Reset State) ---
-    function clearVisualization(clearMazeStructure = true) {
+     function clearVisualization(clearMazeStructure = true) {
         if (animationFrameId) {
-            clearTimeout(animationFrameId);
+            clearTimeout(animationFrameId); // Using timeout ID now
             animationFrameId = null;
         }
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
                 const node = grid[r]?.[c];
                 if (node) {
-                    // Reset internal state
-                    node.reset();
-
                     const element = node.getElement();
                     if (element) {
-                        // Remove visual classes
                         element.classList.remove('open', 'closed', 'current', 'path-final');
+                         // Optionally reset to wall/path if clearing structure
                         if(clearMazeStructure) {
                             if (node.isWall) element.classList.add('wall');
                             else element.classList.remove('wall');
@@ -461,151 +321,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         }
-        // Reapply start/end visuals if nodes exist
-         if (startNode) startNode.getElement()?.classList.add('start');
-         if (endNode) endNode.getElement()?.classList.add('end');
-
-         // Also clear canvas if needed (usually done before drawing)
-         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-          // Redraw initial maze state on canvas after clearing
-         if (!clearMazeStructure) drawMazeOnCanvas();
+        // Ensure start/end are visually correct after clearing
+        if (startNode) startNode.getElement()?.classList.add('start');
+        if (endNode) endNode.getElement()?.classList.add('end');
     }
 
-
-    // --- Disable Controls (Modified) ---
     function disableControls(disabled) {
         generateBtn.disabled = disabled;
         solveBtn.disabled = disabled;
         gridSizeInput.disabled = disabled;
         speedInput.disabled = disabled;
-        // Disable record button if generating/solving visually, or if maze hasn't been solved yet
-        recordBtn.disabled = disabled || !mazeSolved || isRecording;
     }
 
-    // --- Sleep Function (Unchanged) ---
     function sleep(ms) {
         return new Promise(resolve => animationFrameId = setTimeout(resolve, ms));
     }
 
-    // --- NEW: Recording Functions ---
-
-    function startRecording() {
-        if (isRecording || isSolving || isGenerating || !mazeSolved) return;
-
-        isRecording = true;
-        disableControls(true); // Disable all controls during recording
-        recordingStatusDiv.textContent = "Recording starting...";
-        recordedChunks = [];
-
-        // --- Setup MediaRecorder ---
-        // Try to get MP4, fallback likely WebM
-        const options = { mimeType: 'video/mp4; codecs=avc1' }; // H.264 MP4
-        let stream;
-        try {
-             stream = canvas.captureStream(30); // Capture at 30 FPS
-             if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                console.warn(`${options.mimeType} not supported, trying default.`);
-                recordingStatusDiv.textContent += " (MP4 not supported, trying WebM)";
-                delete options.mimeType; // Use browser default (likely WebM)
-            }
-             mediaRecorder = new MediaRecorder(stream, options);
-        } catch (e) {
-             console.error("Error creating MediaRecorder:", e);
-             recordingStatusDiv.textContent = "Error initializing recorder. Check console.";
-             isRecording = false;
-             disableControls(false);
-             return;
-        }
-
-
-        mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                recordedChunks.push(event.data);
-            }
-        };
-
-        mediaRecorder.onstop = () => {
-            recordingStatusDiv.textContent = "Recording finished. Processing...";
-            const blob = new Blob(recordedChunks, {
-                type: mediaRecorder.mimeType // Use the actual mimeType used
-            });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            document.body.appendChild(a);
-            a.style.display = 'none';
-            a.href = url;
-            const fileExtension = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
-            a.download = `maze_solve_${rows}x${cols}.${fileExtension}`;
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
-
-            recordingStatusDiv.textContent = `Recording saved as ${a.download}`;
-            isRecording = false;
-            disableControls(false); // Re-enable controls
-            recordedChunks = []; // Clear chunks
-        };
-
-         mediaRecorder.onerror = (event) => {
-            console.error("MediaRecorder error:", event.error);
-            recordingStatusDiv.textContent = `Recording error: ${event.error.name}. Check console.`;
-            isRecording = false;
-            disableControls(false);
-             recordedChunks = [];
-         };
-
-        // --- Run the solver specifically for recording ---
-         recordingStatusDiv.textContent = "Recording... Solving maze quickly.";
-         mediaRecorder.start();
-
-         // Draw initial state clearly before starting simulation
-         clearVisualization(false); // Reset node states visually and internally
-         drawMazeOnCanvas();       // Draw initial maze on canvas
-
-         // Callback function to draw canvas on each logical step
-         const recordStepCallback = () => {
-             drawMazeOnCanvas();
-             // Note: We don't need explicit delays here. MediaRecorder captures
-             // frames at its own rate (30fps). We just update the canvas state
-             // as fast as the algorithm runs.
-         };
-
-        // Run the solver logic without delays, using the callback
-        solveMaze(true, recordStepCallback)
-            .then((found) => {
-                 // Ensure the very final state (path fully drawn or no path) is captured
-                 drawMazeOnCanvas();
-                 // Small delay to ensure the last frame is captured before stopping
-                 setTimeout(() => {
-                    if (mediaRecorder && mediaRecorder.state === "recording") {
-                        mediaRecorder.stop();
-                    } else if (mediaRecorder && mediaRecorder.state === "inactive") {
-                        // If it stopped prematurely due to error, handle cleanup
-                        console.warn("Recorder was inactive when trying to stop.");
-                         isRecording = false;
-                         disableControls(false);
-                         recordedChunks = [];
-                    }
-                 }, 100); // Wait 100ms
-            })
-             .catch(error => {
-                console.error("Error during recording solve:", error);
-                recordingStatusDiv.textContent = "Error during solve for recording.";
-                 if (mediaRecorder && mediaRecorder.state === "recording") {
-                     mediaRecorder.stop(); // Try to finalize video if possible
-                 } else {
-                    isRecording = false;
-                    disableControls(false);
-                    recordedChunks = [];
-                 }
-            });
-    }
-
-
     // --- Event Listeners ---
     generateBtn.addEventListener('click', generateMaze);
-    solveBtn.addEventListener('click', () => solveMaze()); // Normal solve
-    recordBtn.addEventListener('click', startRecording);
+    solveBtn.addEventListener('click', solveMaze);
 
     // --- Initial Setup ---
     generateMaze(); // Generate a maze on load
