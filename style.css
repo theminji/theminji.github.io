@@ -1,0 +1,145 @@
+body {
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: #f0f0f0;
+    margin: 0;
+    padding: 20px;
+}
+
+h1 {
+    color: #333;
+}
+
+.controls {
+    margin-bottom: 20px;
+    background-color: #fff;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.controls label {
+    margin-right: 5px;
+}
+
+.controls input[type="number"] {
+    width: 60px;
+    padding: 5px;
+    margin-right: 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.controls button {
+    padding: 8px 15px;
+    margin-left: 10px;
+    cursor: pointer;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+.controls button:hover {
+    background-color: #0056b3;
+}
+
+.controls button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+
+#status {
+    margin-bottom: 15px;
+    font-style: italic;
+    color: #555;
+    min-height: 1.2em; /* Prevent layout shift */
+}
+
+#maze-container {
+    display: grid;
+    /* grid-template-columns will be set by JS */
+    /* grid-template-rows will be set by JS */
+    border: 2px solid #333;
+    background-color: #fff; /* Background for the grid gaps if any */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    /* Size will be adjusted by JS */
+}
+
+.cell {
+    /* width and height will be set by JS */
+    background-color: #fff; /* Default: path */
+    border: 1px solid #eee; /* Subtle grid lines */
+    box-sizing: border-box; /* Include border in size */
+    transition: background-color 0.1s ease-out; /* Smooth color changes */
+}
+
+.cell.wall {
+    background-color: #333;
+    border-color: #333;
+}
+
+.cell.start {
+    background-color: #28a745; /* Green */
+}
+
+.cell.end {
+    background-color: #dc3545; /* Red */
+}
+
+/* --- A* Visualization Classes --- */
+
+/* Node currently being considered */
+.cell.current {
+    background-color: #ffc107; /* Yellow */
+    opacity: 0.8;
+}
+
+/* Nodes added to the open set */
+.cell.open {
+    background-color: #add8e6; /* Light Blue */
+    opacity: 0.8;
+}
+
+/* Nodes already evaluated (closed set) */
+.cell.closed {
+    background-color: #b0c4de; /* Light Steel Blue */
+    opacity: 0.8;
+}
+
+/* Cells part of the final path */
+.cell.path-final {
+    background-color: #ffeb3b; /* Bright Yellow */
+    border-color: #ffc107;
+    animation: pulse 0.5s infinite alternate;
+}
+
+@keyframes pulse {
+    from { transform: scale(1); }
+    to { transform: scale(0.9); }
+}
+
+/* Ensure start/end colors override others during solving */
+.cell.start.open, .cell.start.closed, .cell.start.current { background-color: #28a745; opacity: 1; }
+.cell.end.open, .cell.end.closed, .cell.end.current { background-color: #dc3545; opacity: 1; }
+.cell.start.path-final, .cell.end.path-final { animation: none; transform: scale(1); } /* Stop pulsing for start/end in path */
+
+/* styles.css */
+/* ... (previous CSS) ... */
+
+#recording-canvas {
+    /* If you want it visible for debugging: */
+    /* display: block; */
+    /* margin-top: 20px; */
+    /* border: 1px solid blue; */
+
+    /* To hide it: */
+     display: none;
+     /* position: absolute; */
+     /* top: -9999px; */
+     /* left: -9999px; */
+}

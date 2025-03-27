@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A* Maze Solver</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>A* Maze Solver Visualization</h1>
+
+    <div class="controls">
+        <label for="gridSize">Grid Size:</label>
+        <input type="number" id="gridSize" value="25" min="5" max="50" step="2"> <!-- Odd numbers often better for maze gen -->
+
+        <label for="speed">Visualization Speed (ms):</label>
+        <input type="number" id="speed" value="50" min="1" max="1000">
+
+        <button id="generate-btn">Generate New Maze</button>
+        <button id="solve-btn">Solve Maze</button>
+    </div>
+
+    <div id="status">Ready. Generate a maze.</div>
+
+    <div id="maze-container">
+        <!-- Maze grid will be generated here by JavaScript -->
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
